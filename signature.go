@@ -68,11 +68,14 @@ func getSignatureOptions(opts crypto.SignerOpts) *SignatureOptions {
 func (sk *PrivateKey) Sign(rng io.Reader, message []byte, opts crypto.SignerOpts) ([]byte, error) {
 	o := getSignatureOptions(opts)
 
+	bytesP := sk.publicKey.elementBytes
+
 	// Generate the per-signature nonce (k).
 	//
 	// This adopts a hedged approach of including:
 	// - A per-private key static nonce (`prefix` in RFC 8032 Ed25519)
 	// - Fresh entropy (`a` in BIP-0340)
+	// - The signature domain separator.
 	// - The public key (`bytes(P)` in BIP-0340)
 	// - The message (`m` in BIP-0340, `M` in RFC 8032 Ed25519)
 	//
@@ -83,7 +86,8 @@ func (sk *PrivateKey) Sign(rng io.Reader, message []byte, opts crypto.SignerOpts
 	if err := writeAuxRand(xof, rng); err != nil {
 		return nil, err
 	}
-	_, _ = xof.Write(sk.publicKey.elementBytes)
+	_, _ = xof.Write([]byte(o.DomainSeparator))
+	_, _ = xof.Write(bytesP)
 	_, _ = xof.Write(message)
 	k := sampleNonZeroScalar(xof)
 
@@ -91,13 +95,8 @@ func (sk *PrivateKey) Sign(rng io.Reader, message []byte, opts crypto.SignerOpts
 	R := ristretto255.NewIdentityElement().ScalarBaseMult(k)
 	bytesR := R.Bytes()
 
-	// Generate the challenge scalar (e).
-	h := tuplehash.NewTupleHash128(dsSignatureChallenge, wideScalarSize)
-	_, _ = h.Write([]byte(o.DomainSeparator))
-	_, _ = h.Write(bytesR)
-	_, _ = h.Write(sk.publicKey.elementBytes)
-	_, _ = h.Write(message)
-	e := sampleScalar(h)
+	// Compute the challenge scalar (e).
+	e := computeChallenge(o.DomainSeparator, bytesR, bytesP, message)
 
 	// Let sig = bytes(R) || bytes((k + ed) mod n).
 	s := ristretto255.NewScalar().Multiply(e, sk.scalar)
@@ -130,7 +129,7 @@ func (pk *PublicKey) doVerify(message, sig []byte, opts crypto.SignerOpts) error
 		return errInvalidSignature
 	}
 
-	bytesR, bytesS := sig[0:32], sig[32:64]
+	bytesR, bytesS, bytesP := sig[0:32], sig[32:64], pk.elementBytes
 
 	// Decode bytesR as a canonically encoded ristretto25519 group element,
 	// that MUST NOT be the identity element.
@@ -148,13 +147,8 @@ func (pk *PublicKey) doVerify(message, sig []byte, opts crypto.SignerOpts) error
 		return errNonCanonicalS
 	}
 
-	// Re-generate the challenge scalar (e).
-	h := tuplehash.NewTupleHash128(dsSignatureChallenge, wideScalarSize)
-	_, _ = h.Write([]byte(o.DomainSeparator))
-	_, _ = h.Write(bytesR)
-	_, _ = h.Write(pk.elementBytes)
-	_, _ = h.Write(message)
-	e := sampleScalar(h)
+	// Re-compute the challenge scalar (e).
+	e := computeChallenge(o.DomainSeparator, bytesR, bytesP, message)
 
 	// Let Rcheck = s*G - e*P.
 	//
@@ -168,4 +162,20 @@ func (pk *PublicKey) doVerify(message, sig []byte, opts crypto.SignerOpts) error
 	}
 
 	return nil
+}
+
+func computeChallenge(domainSeparator string, bytesR []byte, bytesP []byte, message []byte) *ristretto255.Scalar {
+	h := tuplehash.NewTupleHash128(dsSignatureChallenge, wideScalarSize)
+	_, _ = h.Write([]byte(domainSeparator))
+	_, _ = h.Write(bytesR)
+	_, _ = h.Write(bytesP)
+	_, _ = h.Write(message)
+
+	sc, err := ristretto255.NewScalar().SetUniformBytes(h.Sum(nil))
+	if err != nil {
+		// NEVER: error only returned on invalid input length.
+		panic("bs255: failed to sample scalar: " + err.Error())
+	}
+
+	return sc
 }

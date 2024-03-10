@@ -53,16 +53,6 @@ func sampleNonZeroScalar(xof *tuplehash.Hasher) *ristretto255.Scalar {
 	}
 }
 
-func sampleScalar(h *tuplehash.Hasher) *ristretto255.Scalar {
-	sc, err := ristretto255.NewScalar().SetUniformBytes(h.Sum(nil))
-	if err != nil {
-		// NEVER: error only returned on invalid input length.
-		panic("bs255: failed to sample scalar: " + err.Error())
-	}
-
-	return sc
-}
-
 func geIsIdentity(ge *ristretto255.Element) bool {
 	return ge.Equal(geIdentity) == 1
 }

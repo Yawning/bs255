@@ -173,8 +173,8 @@ func (pk *PublicKey) Equal(x crypto.PublicKey) bool {
 
 // NewPublicKey checks that `key` is valid and returns a PublicKey.
 //
-// `key` MUST be a canonical encoding of a ristretto25519 group element,
-// and MUST NOT be the identity element.
+// `key` MUST be a valid canonical encoding of a ristretto25519 group
+// element, and MUST NOT be the identity element.
 func NewPublicKey(key []byte) (*PublicKey, error) {
 	ge, err := ristretto255.NewIdentityElement().SetCanonicalBytes(key)
 	if err != nil {

@@ -20,8 +20,8 @@ var (
 	errSelfVerifyFailure = errors.New("bs255: failed to self-verify signature")
 
 	errInvalidSignature = errors.New("bs255: invalid signature")
-	errNonCanonicalR    = errors.New("bs255: non-canonical R")
-	errRIsIdentity      = errors.New("bs255: R is identity element")
+	errInvalidR         = errors.New("bs255: invalid R")
+	errIdentityR        = errors.New("bs255: R is identity element")
 	errNonCanonicalS    = errors.New("bs255: non-canonical s")
 	errRMismatch        = errors.New("bs255: Rcheck != R")
 
@@ -131,14 +131,14 @@ func (pk *PublicKey) doVerify(message, sig []byte, opts crypto.SignerOpts) error
 
 	bytesR, bytesS, bytesP := sig[0:32], sig[32:64], pk.elementBytes
 
-	// Decode bytesR as a canonically encoded ristretto25519 group element,
-	// that MUST NOT be the identity element.
+	// Decode bytesR as a valid canonical encoding of a ristretto25519
+	// group element, that MUST NOT be the identity element.
 	R, err := ristretto255.NewIdentityElement().SetCanonicalBytes(bytesR)
 	if err != nil {
-		return errNonCanonicalR
+		return errInvalidR
 	}
 	if geIsIdentity(R) {
-		return errRIsIdentity
+		return errIdentityR
 	}
 
 	// Decode bytesS as a canonicaly encoded ristretto25519 scalar.

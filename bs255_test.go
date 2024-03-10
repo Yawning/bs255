@@ -8,14 +8,18 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/rand"
+	"encoding/hex"
 	"testing"
 
+	"github.com/gtank/ristretto255"
 	"github.com/stretchr/testify/require"
 )
 
 const (
 	testDomainSep = "bs255-tests"
 	testMessage   = "Liberty is meaningless if it is only the liberty to agree with those in power."
+
+	invalidGeHex = "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
 )
 
 func TestKey(t *testing.T) {
@@ -43,6 +47,14 @@ func TestKey(t *testing.T) {
 
 		require.EqualValues(t, pkBytes, pk2.Bytes(), "Bytes(): should be pkBytes")
 		require.True(t, pk.Equal(pk2), "Equal(): pk should equal pk2")
+
+		pk3, err := NewPublicKey(mustUnhex(t, invalidGeHex))
+		require.Nil(t, pk3, "NewPublicKey: invalid group element")
+		require.ErrorIs(t, err, errInvalidPublicKey, "NewPublicKey")
+
+		pk3, err = NewPublicKey(ristretto255.NewIdentityElement().Bytes())
+		require.Nil(t, pk3, "NewPublicKey: identity")
+		require.ErrorIs(t, err, errAIsIdentity, "NewPublicKey")
 	})
 }
 
@@ -79,10 +91,15 @@ func TestSignature(t *testing.T) {
 
 	msgBytes := []byte(testMessage)
 
+	scOne := make([]byte, 32)
+	scOne[0] = 0x1
+
 	t.Run("Integration", func(t *testing.T) {
 		signer := crypto.Signer(sk)
 
-		sig, err := signer.Sign(rand.Reader, msgBytes, nil)
+		sig, err := signer.Sign(rand.Reader, msgBytes, &SignatureOptions{
+			SelfVerify: true,
+		})
 		require.NoError(t, err, "Sign")
 
 		ok := pk.Verify(msgBytes, sig, nil)
@@ -95,6 +112,68 @@ func TestSignature(t *testing.T) {
 
 		ok = pk.Verify(msgBytes[:5], sig, nil)
 		require.False(t, ok, "Verify: Truncated h")
+	})
+	t.Run("Sign", func(t *testing.T) {
+		t.Run("NonDeterministic", func(t *testing.T) {
+			signer := crypto.Signer(sk)
+
+			sig, err := signer.Sign(nil, msgBytes, nil)
+			require.NoError(t, err, "Sign")
+
+			sig2, err := signer.Sign(nil, msgBytes, nil)
+			require.NoError(t, err, "Sign: Again")
+
+			require.NotEqualValues(t, sig[:32], sig2[:32], "R should be different")
+			require.NotEqualValues(t, sig[32:], sig2[32:], "s should be different")
+		})
+		t.Run("Deterministic", func(t *testing.T) {
+			signer := crypto.Signer(sk)
+
+			sig, err := signer.Sign(DeterministicSign, msgBytes, nil)
+			require.NoError(t, err, "Sign")
+
+			sig2, err := signer.Sign(DeterministicSign, msgBytes, nil)
+			require.NoError(t, err, "Sign: Again")
+			require.EqualValues(t, sig, sig2, "signatures should be match")
+
+			sig2, err = signer.Sign(DeterministicSign, msgBytes, &SignatureOptions{
+				DomainSeparator: testDomainSep,
+			})
+			require.NoError(t, err, "Sign: Domain sep")
+			require.NotEqualValues(t, sig[:32], sig2[:32], "R should be different")
+
+			sig2, err = signer.Sign(DeterministicSign, []byte("Different message"), nil)
+			require.NoError(t, err, "Sign: Message")
+			require.NotEqualValues(t, sig[:32], sig2[:32], "R should be different")
+		})
+	})
+	t.Run("Verify/Invalid", func(t *testing.T) {
+		t.Run("Size", func(t *testing.T) {
+			var shortSig [SignatureSize - 1]byte
+
+			err := pk.doVerify(msgBytes, shortSig[:], nil)
+			require.ErrorIs(t, err, errInvalidSignature)
+		})
+		t.Run("NonCanonicalR", func(t *testing.T) {
+			badRSig := mustUnhex(t, invalidGeHex)
+			badRSig = append(badRSig, scOne...)
+
+			err := pk.doVerify(msgBytes, badRSig, nil)
+			require.ErrorIs(t, err, errInvalidR)
+		})
+		t.Run("IdentityR", func(t *testing.T) {
+			identityRSig := append(ristretto255.NewIdentityElement().Bytes(), scOne...)
+
+			err := pk.doVerify(msgBytes, identityRSig, nil)
+			require.ErrorIs(t, err, errIdentityR)
+		})
+		t.Run("NonCanonicalS", func(t *testing.T) {
+			bytesBadS := mustUnhex(t, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+			badSSig := append(ristretto255.NewGeneratorElement().Bytes(), bytesBadS...)
+
+			err := pk.doVerify(msgBytes, badSSig, nil)
+			require.ErrorIs(t, err, errNonCanonicalS)
+		})
 	})
 }
 
@@ -186,4 +265,10 @@ func BenchmarkBs255(b *testing.B) {
 			}
 		})
 	})
+}
+
+func mustUnhex(t *testing.T, s string) []byte {
+	b, err := hex.DecodeString(s)
+	require.NoError(t, err, "hex.DecodeString")
+	return b
 }

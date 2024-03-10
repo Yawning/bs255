@@ -131,7 +131,7 @@ func (pk *PublicKey) doVerify(message, sig []byte, opts crypto.SignerOpts) error
 
 	bytesR, bytesS, bytesP := sig[0:32], sig[32:64], pk.elementBytes
 
-	// Decode bytesR as a valid canonical encoding of a ristretto25519
+	// Decode bytesR as a valid canonical encoding of a ristretto255
 	// group element, that MUST NOT be the identity element.
 	R, err := ristretto255.NewIdentityElement().SetCanonicalBytes(bytesR)
 	if err != nil {
@@ -141,7 +141,7 @@ func (pk *PublicKey) doVerify(message, sig []byte, opts crypto.SignerOpts) error
 		return errIdentityR
 	}
 
-	// Decode bytesS as a canonicaly encoded ristretto25519 scalar.
+	// Decode bytesS as a canonicaly encoded ristretto255 scalar.
 	s, err := ristretto255.NewScalar().SetCanonicalBytes(bytesS)
 	if err != nil {
 		return errNonCanonicalS

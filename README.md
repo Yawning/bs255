@@ -1,8 +1,8 @@
-### bs255 - ristretto25519 Schnorr Signatures
+### bs255 - ristretto255 Schnorr Signatures
 #### Yawning Angel (yawning at schwanenlied dot me)
 
 This is a [Schnorr signature][1] scheme largely inspired by [BIP-0340][2],
-that uses the [ristretto25519][3] prime-order group.
+that uses the [ristretto255][3] prime-order group.
 
 Design goals:
 
@@ -11,7 +11,7 @@ Design goals:
 - As edge-case free as possible, with specified behavior when unavoidable.
 - Mandatory domain separation (an empty domain separator is allowed).
 - Determinstic or non-deterministic ("added entropy") nonce generation.
-- "Easy" to implement given an existing ristretto25519 and scalar field
+- "Easy" to implement given an existing ristretto255 and scalar field
   library.
 
 This scheme maintains the ability to do batch verification and to implement
@@ -25,12 +25,12 @@ California to cause cancer.  For more information visit www.P65Warnings.ca.gov.
 
 ##### Main differences from BIP-0340
 
-- The ristretto25519 prime-order group is used instead of secp256k1.  This
+- The ristretto255 prime-order group is used instead of secp256k1.  This
   simplifies the specification and implementation as "group elements" are
   easier to deal with than elliptic curve points.
 - TupleHash(XOF)128 is used instead of an ad-hoc tagged SHA-256 construct.
 - When scalars are sampled, instead of reducing 256-bit values mod n,
-  512-bit values are reduced mod n instead.  As ristretto25519 shares the
+  512-bit values are reduced mod n instead.  As ristretto255 shares the
   Ed25519 scalar field, this operation is widely available in existing
   libraries.
 

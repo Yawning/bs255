@@ -118,12 +118,8 @@ func NewPrivateKey(key []byte) (*PrivateKey, error) {
 	_, _ = xof.Read(sk.nonce)
 	sk.scalar = sampleNonZeroScalar(xof)
 
-	var err error
 	ge := ristretto255.NewIdentityElement().ScalarBaseMult(sk.scalar)
-	if sk.publicKey, err = newPublicKeyFromElement(ge); err != nil {
-		// NEVER: error only returned on ge == inf.
-		panic("bs255: failed to generate public key: " + err.Error())
-	}
+	sk.publicKey = newPublicKeyFromElement(ge)
 
 	return sk, nil
 }
@@ -180,17 +176,16 @@ func NewPublicKey(key []byte) (*PublicKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidPublicKey, err)
 	}
-
-	return newPublicKeyFromElement(ge)
-}
-
-func newPublicKeyFromElement(ge *ristretto255.Element) (*PublicKey, error) {
 	if geIsIdentity(ge) {
 		return nil, errAIsIdentity
 	}
 
+	return newPublicKeyFromElement(ge), nil
+}
+
+func newPublicKeyFromElement(ge *ristretto255.Element) *PublicKey {
 	return &PublicKey{
 		element:      ge,
 		elementBytes: ge.Bytes(),
-	}, nil
+	}
 }

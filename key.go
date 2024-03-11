@@ -112,15 +112,15 @@ func NewPrivateKey(key []byte) (*PrivateKey, error) {
 		nonce:    make([]byte, nonceSize),
 	}
 
-	h := tuplehash.NewTupleHash128(dsExpandPrivateKey, nonceSize+wideScalarSize)
+	h := tuplehash.NewTupleHash128(dsExpandPrivateKey, wideScalarSize+nonceSize)
 	_, _ = h.Write(key)
 	b := h.Sum(nil)
 
-	copy(sk.nonce, b)
-	sk.scalar, _ = ristretto255.NewScalar().SetUniformBytes(b[nonceSize:]) // Can't fail.
+	sk.scalar, _ = ristretto255.NewScalar().SetUniformBytes(b[:wideScalarSize]) // Can't fail.
 	if sk.scalar.Equal(scZero) == 1 {
 		return nil, errInvalidPrivateKey
 	}
+	copy(sk.nonce, b[wideScalarSize:])
 
 	ge := ristretto255.NewIdentityElement().ScalarBaseMult(sk.scalar)
 	sk.publicKey = newPublicKeyFromElement(ge)

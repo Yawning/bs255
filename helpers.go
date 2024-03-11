@@ -6,6 +6,7 @@ package bs255
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 
@@ -13,27 +14,28 @@ import (
 	"gitlab.com/yawning/tuplehash"
 )
 
-const wideScalarSize = 64
+const (
+	wideScalarSize = 64
+	maxRetries     = 3
+)
 
 var (
 	scZero     = ristretto255.NewScalar()
 	geIdentity = ristretto255.NewIdentityElement()
+
+	errTooManyRetries = errors.New("bs255: too many rejection sampling retries")
 )
 
-func sampleNonZeroScalar(xof *tuplehash.Hasher) *ristretto255.Scalar {
+func sampleNonZeroScalar(xof *tuplehash.Hasher) (*ristretto255.Scalar, error) {
 	sc := ristretto255.NewScalar()
 
 	var tmp [wideScalarSize]byte
-	for {
+	for i := 0; i < maxRetries; i++ {
 		_, _ = xof.Read(tmp[:])
-		if _, err := sc.SetUniformBytes(tmp[:]); err != nil {
-			// NEVER: error only returned on invalid input length.
-			panic("bs255: failed to sample scalar: " + err.Error())
-		}
+		_, _ = sc.SetUniformBytes(tmp[:]) // Can't fail.
 
 		// This is the one and only edge case, which occurs when
-		// expanding the key from the seed, and sampling the signature
-		// nonce `k`.
+		// sampling the signature nonce `k`.
 		//
 		// The probability of this occurring is cryptographically
 		// insignificant, so implementations MAY choose to fail
@@ -48,9 +50,11 @@ func sampleNonZeroScalar(xof *tuplehash.Hasher) *ristretto255.Scalar {
 		//
 		// In either case, this check MUST be done in constant time.
 		if sc.Equal(scZero) == 0 {
-			return sc
+			return sc, nil
 		}
 	}
+
+	return nil, errTooManyRetries
 }
 
 func geIsIdentity(ge *ristretto255.Element) bool {

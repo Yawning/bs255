@@ -89,7 +89,10 @@ func (sk *PrivateKey) Sign(rng io.Reader, message []byte, opts crypto.SignerOpts
 	_, _ = xof.Write([]byte(o.DomainSeparator))
 	_, _ = xof.Write(bytesP)
 	_, _ = xof.Write(message)
-	k := sampleNonZeroScalar(xof)
+	k, err := sampleNonZeroScalar(xof)
+	if err != nil {
+		return nil, err
+	}
 
 	// Let R = k*G.
 	R := ristretto255.NewIdentityElement().ScalarBaseMult(k)
@@ -171,11 +174,6 @@ func computeChallenge(domainSeparator string, bytesR []byte, bytesP []byte, mess
 	_, _ = h.Write(bytesP)
 	_, _ = h.Write(message)
 
-	sc, err := ristretto255.NewScalar().SetUniformBytes(h.Sum(nil))
-	if err != nil {
-		// NEVER: error only returned on invalid input length.
-		panic("bs255: failed to sample scalar: " + err.Error())
-	}
-
+	sc, _ := ristretto255.NewScalar().SetUniformBytes(h.Sum(nil)) // Can't fail.
 	return sc
 }

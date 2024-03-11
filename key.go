@@ -97,9 +97,8 @@ func (sk *PrivateKey) Bytes() []byte {
 // NewPrivateKey checks that `key` is valid and returns the corresponding
 // PrivateKey.
 //
-// This routine will only fail if key is not `PrivateKeySize`-bytes long,
-// and will never generate a private key with a public key that is the
-// identity element.
+// This routine will reject private keys with corresponding public keys
+// that are the identity element.
 func NewPrivateKey(key []byte) (*PrivateKey, error) {
 	if len(key) != PrivateKeySize {
 		return nil, errInvalidPrivateKey
@@ -113,10 +112,15 @@ func NewPrivateKey(key []byte) (*PrivateKey, error) {
 		nonce:    make([]byte, nonceSize),
 	}
 
-	xof := tuplehash.NewTupleHashXOF128(dsExpandPrivateKey)
-	_, _ = xof.Write(key)
-	_, _ = xof.Read(sk.nonce)
-	sk.scalar = sampleNonZeroScalar(xof)
+	h := tuplehash.NewTupleHash128(dsExpandPrivateKey, nonceSize+wideScalarSize)
+	_, _ = h.Write(key)
+	b := h.Sum(nil)
+
+	copy(sk.nonce, b)
+	sk.scalar, _ = ristretto255.NewScalar().SetUniformBytes(b[nonceSize:]) // Can't fail.
+	if sk.scalar.Equal(scZero) == 1 {
+		return nil, errInvalidPrivateKey
+	}
 
 	ge := ristretto255.NewIdentityElement().ScalarBaseMult(sk.scalar)
 	sk.publicKey = newPublicKeyFromElement(ge)
@@ -126,13 +130,22 @@ func NewPrivateKey(key []byte) (*PrivateKey, error) {
 
 // GenerateKey generates a new PrivateKey, using [crypto/rand.Reader]
 // as the entropy source.
+//
+// On success, this routine will always return a valid private key.
 func GenerateKey() (*PrivateKey, error) {
 	var raw [PrivateKeySize]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return nil, fmt.Errorf("%w: %w", errRngFailure, err)
+	for i := 0; i < maxRetries; i++ {
+		if _, err := rand.Read(raw[:]); err != nil {
+			return nil, fmt.Errorf("%w: %w", errRngFailure, err)
+		}
+
+		sk, err := NewPrivateKey(raw[:])
+		if err == nil {
+			return sk, nil
+		}
 	}
 
-	return NewPrivateKey(raw[:])
+	return nil, errTooManyRetries
 }
 
 // PublicKey is a bs255 public key.

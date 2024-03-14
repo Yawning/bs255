@@ -57,8 +57,8 @@ California to cause cancer.  For more information visit www.P65Warnings.ca.gov.
 
 ##### TODO
 
-- Write a specification.
 - Add more test cases.
+- Generate some test vectors.
 
 [1]: https://en.wikipedia.org/wiki/Schnorr_signature
 [2]: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
